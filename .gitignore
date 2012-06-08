@@ -1,0 +1,14 @@
+tags
+*.swp
+*.tif
+*.so
+*.log
+*~
+.DS_Store
+ebin/
+.eunit
+deps
+priv
+*.o
+*.beam
+*.plt
