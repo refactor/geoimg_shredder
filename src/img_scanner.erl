@@ -13,11 +13,12 @@
          code_change/4]).
 
 %% API
--export([start_link/2,
+-export([start_link/3,
          complete/3
         ]).
 
 -record(state, {refs = [],
+                riakclient     :: pid(),
                 counter = 0,
                 map_profile,    % tile map profile, 
                                 % such as global-geodetic or global-mercator module
@@ -29,23 +30,26 @@
                         tile_zoom      :: byte(),
                         tile_enclosure :: global_grid:encluse()}).
 
-start_link(TileMapProfileMod, ImgFileName) ->
-    gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName}, []).
+start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
+    gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName, RiakClientConfig}, []).
 
 complete(Pid, Ref, Result) ->
     gen_fsm:send_all_state_event(Pid, {complete, Ref, Result}).
 
-init({ProfileMod, ImgFileName}) ->
+init({ProfileMod, ImgFileName, {RiakIp, RiakPort} = _RiakClientConfig}) ->
+    {ok, RiakClientSocketPid} = riakc_pb_socket:start_link(RiakIp, RiakPort),
+
     self() ! start,
-    {ok, copyouting, #state{map_profile=ProfileMod, 
-                            img_filename=ImgFileName}}.
+    {ok, copyouting, #state{riakclient  = RiakClientSocketPid,
+                            map_profile = ProfileMod, 
+                            img_filename= ImgFileName}}.
 
 copyouting({continue, {Img, RasterInfo, TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs}) ->
     {ok, TileRawdata} = global_grid:copyout_tile_for(State#state.map_profile, 
                                                      TileY, TileX, TileZoom, 
                                                      Img, RasterInfo),
     Ref = make_ref(),
-    tile_builder:start_link({self(), Ref}, {TileRawdata, {TileX, TileY, TileZoom}}),
+    tile_builder:start_link({self(), Ref}, {TileRawdata, {TileX, TileY, TileZoom}}, State#state.riakclient),
     gen_fsm:send_event(self(), Continuation()),
     {next_state, copyouting, State#state{refs=[Ref|Refs]}};
 copyouting(done, State) ->

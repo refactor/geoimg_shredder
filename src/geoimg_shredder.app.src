@@ -5,7 +5,10 @@
   {registered, []},
   {applications, [
                   kernel,
-                  stdlib
+                  stdlib,
+                  lager,
+                  geo_utils,
+                  ppool
                  ]},
   {mod, { geoimg_shredder_app, []}},
   {env, []}
