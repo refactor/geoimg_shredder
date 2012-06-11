@@ -5,6 +5,7 @@ tags
 *.log
 *~
 .DS_Store
+log/
 ebin/
 .eunit
 deps
