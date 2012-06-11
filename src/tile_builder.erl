@@ -60,22 +60,10 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 tile_export(RiakClientSocketPid, Tile, {Tx, Ty, Tz}) ->
-    SaveTilesToDir = "/tmp/gtiles",
-    TilesFileExt = "png",
-
-    TileFilename = filename:join([SaveTilesToDir, 
-            integer_to_list(Tz), integer_to_list(Tx), 
-            integer_to_list(Ty) ++ "." ++ TilesFileExt]),
-    ok = filelib:ensure_dir(TileFilename),
-    lager:debug("saved tile(~p)", [TileFilename]),
-    %gdal_nif:save_tile(Tile, TileFilename),
-
-    Filename = 
-            integer_to_list(Tz) ++ "_" ++ integer_to_list(Tx) ++ "_" ++
-            integer_to_list(Ty) ++ "." ++ TilesFileExt,
-    {ok, Binary} = gdal_nif:tile_to_binary(Tile, Filename),
-%    ok = file:write_file(TileFilename, Binary),
     QuadtreeKey = list_to_binary(global_grid:quadtree(Tx, Ty, Tz)),
-    lager:debug("img key: ~p, binary size: ~p~n", [QuadtreeKey, size(Binary)]),
-    TileObject = riakc_obj:new(<<"gis">>, QuadtreeKey, Binary, "image/png"),
-    riakc_pb_socket:put(RiakClientSocketPid, TileObject).
+    {ok, TileBinary} = gdal_nif:tile_to_binary(Tile, QuadtreeKey),
+    lager:debug("img key: ~p, binary size: ~p~n", [QuadtreeKey, size(TileBinary)]),
+
+    ContentType = "image/png",
+    TileRiakObject = riakc_obj:new(<<"gis">>, QuadtreeKey, TileBinary, ContentType),
+    riakc_pb_socket:put(RiakClientSocketPid, TileRiakObject).
