@@ -60,7 +60,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
 tile_export(RiakClientSocketPid, Tile, {Tx, Ty, Tz}) ->
-    QuadtreeKey = list_to_binary(global_grid:quadtree(Tx, Ty, Tz)),
+    QuadtreeKey = global_grid:quadtree(Tx, Ty, Tz),
     {ok, TileBinary} = gdal_nif:tile_to_binary(Tile, QuadtreeKey),
     lager:debug("img key: ~p, binary size: ~p~n", [QuadtreeKey, size(TileBinary)]),
 
