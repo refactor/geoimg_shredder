@@ -46,7 +46,7 @@ init({ProfileMod, ImgFileName, {RiakIp, RiakPort} = _RiakClientConfig}) ->
 
 copyouting({continue, {Img, RasterInfo, TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs}) ->
     {ok, TileRawdata} = global_grid:copyout_tile_for(State#state.map_profile, 
-                                                     TileY, TileX, TileZoom, 
+                                                     TileX, TileY, TileZoom, 
                                                      Img, RasterInfo),
     Ref = make_ref(),
     tile_builder:start_link({self(), Ref}, {TileRawdata, {TileX, TileY, TileZoom}}, State#state.riakclient),
@@ -57,7 +57,7 @@ copyouting(done, State) ->
     listening(done, State).
 
 listening(done, #state{refs=[], counter=Counter}) ->
-    lager:info("the tile copyout-build-work had done, sum: ~p", [Counter]),
+    lager:info("the tile copyout-build-work had done, built tiles sum: ~p", [Counter]),
     {stop, normal, done};
 listening(done, State) ->
     {next_state, listening, State}.
@@ -72,7 +72,6 @@ handle_event({complete, Ref, Result}, StateName, StateData = #state{refs=Refs, c
             listening(done, NewStateData)
     end;
 handle_event(debug, StateName, StateData) ->
-    io:format("handle EVENT~n"),
     lager:debug("state name: ~p, state data: ~p", [StateName, StateData]),
     {next_state, StateName, StateData};
 handle_event(_Event, StateName, StateData) ->
