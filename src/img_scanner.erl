@@ -1,8 +1,6 @@
 -module(img_scanner).
 -behaviour(gen_fsm).
 
--export([scan_img/2]).
-
 -export([init/1,
          copyouting/2, 
          listening/2, 
@@ -25,11 +23,6 @@
                                 % such as global-geodetic or global-mercator module
                 tile_size = 256 :: integer()}).
 
--record(tile_position, {current_tile_x :: integer(), 
-                        current_tile_y :: integer(), 
-                        tile_zoom      :: byte(),
-                        tile_enclosure :: global_grid:encluse()}).
-
 start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
     gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName, RiakClientConfig}, []).
 
@@ -39,9 +32,8 @@ complete(Pid, Ref, Result) ->
 init({ProfileMod, ImgFileName, {RiakIp, RiakPort} = _RiakClientConfig}) ->
     {ok, RiakClientSocketPid} = riakc_pb_socket:start_link(RiakIp, RiakPort),
 
-    self() ! {start, ImgFileName},
-    {ok, copyouting, #state{riakclient  = RiakClientSocketPid,
-                            map_profile = ProfileMod}}.
+    self() ! {start, ImgFileName, ProfileMod},
+    {ok, copyouting, #state{riakclient  = RiakClientSocketPid}}.
 
 copyouting({continue, {TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs, img_tiler=ImgTiler}) ->
     {ok, TileRawdata} = ImgTiler:copyout_tile_for(TileX, TileY, TileZoom),
@@ -77,11 +69,11 @@ handle_event(_Event, StateName, StateData) ->
 handle_sync_event(_Event, _From, StateName, StateData) ->
     {next_state, StateName, StateData}.
 
-handle_info({start, ImgFileName}, StateName, StateData = #state{map_profile=ProfileMod}) ->
+handle_info({start, ImgFileName, ProfileMod}, StateName, StateData) ->
     {ok, Img, RasterInfo} = gdal_nif:create_warped_vrt(ImgFileName, 
                                                        ProfileMod:epsg_code()),
     ImgTiler = img_tiler:new(ProfileMod, Img, RasterInfo),
-    gen_fsm:send_event(self(), scan_img(ImgTiler)),
+    gen_fsm:send_event(self(), ImgTiler:scan_img()),
     {next_state, StateName, StateData#state{img_tiler=ImgTiler}}.
 
 terminate(_Reason, _StateName, _StateData) ->
@@ -90,46 +82,4 @@ terminate(_Reason, _StateName, _StateData) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
-
-scan_img(ImgTiler) ->
-    {TileZoom, TileEnclosure} = ImgTiler:calc_tiles_enclosure(),
-    {StartTileX, StartTileY, _, _} = TileEnclosure,
-    {continue, {StartTileX, StartTileY, TileZoom},
-               fun() ->
-                    scan_img(ImgTiler,
-                             #tile_position{current_tile_x = StartTileX, 
-                                            current_tile_y = StartTileY, 
-                                            tile_zoom      = TileZoom,
-                                            tile_enclosure = TileEnclosure})
-               end}.
-
-scan_img(_ImgTiler, #tile_position{current_tile_x = MaxX,
-                                   current_tile_y = MaxY,
-                                   tile_zoom      = _TileZoom,
-                                   tile_enclosure = {_,_, MaxX,MaxY}}) ->
-    done;
-scan_img(ImgTiler, #tile_position{current_tile_x = MaxX,
-                                  current_tile_y = Y,
-                                  tile_zoom      = TileZoom,
-                                  tile_enclosure ={MinX,MinY,MaxX,MaxY}}) ->
-    {continue, {MinX, Y + 1, TileZoom},
-                fun() ->
-                    scan_img(ImgTiler, 
-                             #tile_position{current_tile_x = MinX,
-                                            current_tile_y = Y + 1,
-                                            tile_zoom      = TileZoom,
-                                            tile_enclosure = {MinX,MinY,MaxX,MaxY}})
-                end};
-scan_img(ImgTiler, #tile_position{current_tile_x = X,
-                                  current_tile_y = Y,
-                                  tile_zoom      = TileZoom,
-                                  tile_enclosure={MinX,MinY,MaxX,MaxY}}) ->
-    {continue, {X + 1, Y, TileZoom},
-                fun() ->
-                    scan_img(ImgTiler, 
-                             #tile_position{current_tile_x = X + 1,
-                                            current_tile_y = Y,
-                                            tile_zoom      = TileZoom,
-                                            tile_enclosure = {MinX,MinY, MaxX, MaxY}})
-                end}.
 
