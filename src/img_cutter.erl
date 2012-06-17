@@ -27,16 +27,18 @@ start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
 complete(Pid, Ref, Result) ->
     gen_fsm:send_all_state_event(Pid, {complete, Ref, Result}).
 
-init({ProfileMod, ImgFileName, {RiakIp, RiakPort} = _RiakClientConfig}) ->
+init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
     {ok, RiakClientSocketPid} = riakc_pb_socket:start_link(RiakIp, RiakPort),
 
     self() ! {start, ImgFileName, ProfileMod},
     {ok, copyouting, #state{riakclient  = RiakClientSocketPid}}.
 
-copyouting({continue, {TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs, img_tiler=ImgTiler}) ->
-    {ok, TileRawdata} = ImgTiler:copyout_tile_for(TileX, TileY, TileZoom),
+copyouting({continue, {TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs, 
+                                                                            riakclient=RiakClient,
+                                                                            img_tiler=ImgTiler}) ->
+    {ok, TileRawdata} = ImgTiler:copyout_rawtile_for(TileX, TileY, TileZoom),
     Ref = make_ref(),
-    tile_builder:start_link({self(), Ref}, {TileRawdata, {TileX, TileY, TileZoom}}, State#state.riakclient),
+    tile_builder:start_link({self(), Ref}, {TileRawdata, {TileX, TileY, TileZoom}}, RiakClient),
     gen_fsm:send_event(self(), Continuation()),
     {next_state, copyouting, State#state{refs=[Ref|Refs]}};
 copyouting(done, State) ->
@@ -49,7 +51,8 @@ listening(done, #state{refs=[], counter=Counter, riakclient=RiakClient}) ->
 listening(done, State) ->
     {next_state, listening, State}.
 
-handle_event({complete, Ref, Result}, StateName, StateData = #state{refs=Refs, counter=Counter}) ->
+handle_event({complete, Ref, Result}, StateName, StateData = #state{refs=Refs, 
+                                                                    counter=Counter}) ->
     lager:debug("complete: ~p, length(Refs): ~p", [Result, length(Refs)]),
     NewStateData = StateData#state{refs=Refs--[Ref], counter=Counter+1},
     case StateName of
