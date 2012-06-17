@@ -19,18 +19,18 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
-start_link(ScannerInfo, {Tile, {Tx, Ty, Tz}}, RiakClientSocketPid) ->
-    gen_server:start_link(?MODULE, [ScannerInfo, {Tile, {Tx, Ty, Tz}}, RiakClientSocketPid], []).
+start_link(CutterInfo, {Tile, {Tx, Ty, Tz}}, RiakClientSocketPid) ->
+    gen_server:start_link(?MODULE, [CutterInfo, {Tile, {Tx, Ty, Tz}}, RiakClientSocketPid], []).
 
--record(state, {scanner, riakclient, ref, tile, tileinfo}).
+-record(state, {cutter_pid, riakclient, ref, tile, tileinfo}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init([{ScannerPid, Ref}, {Tile, {Tx, Ty, Tz}}, RiakClientSocketPid]) ->
+init([{CutterPid, Ref}, {Tile, {Tx, Ty, Tz}}, RiakClientSocketPid]) ->
     self() ! start,
-    {ok, #state{scanner=ScannerPid,
+    {ok, #state{cutter_pid=CutterPid,
                 riakclient = RiakClientSocketPid,
                 ref = Ref,
                 tile = Tile, 
@@ -44,13 +44,13 @@ handle_cast(_Msg, State) ->
 
 handle_info(start, State = #state{ref=Ref, tile=Tile, tileinfo={Tx,Ty,Tz}, riakclient=RiakClientSocketPid}) ->
     gdal_nif:build_tile(Tile),
-    Res = tile_export(RiakClientSocketPid, Tile, {Tx, Ty, Tz}),
+    Res = export_tile(RiakClientSocketPid, Tile, {Tx, Ty, Tz}),
     lager:debug("export result: ~p", [Res]),
     ok = Res,
-    img_scanner:complete(State#state.scanner, Ref, {Tx,Ty,Tz}),
+    img_cutter:complete(State#state.cutter_pid, Ref, {Tx,Ty,Tz}),
     {stop, normal, State}.
 
-terminate(_Reason, _State) ->
+terminate(_Reason, #state{tile=Tile}) ->
     ok.
 
 code_change(_OldVsn, State, _Extra) ->
@@ -59,10 +59,10 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
-tile_export(RiakClientSocketPid, Tile, {Tx, Ty, Tz}) ->
+export_tile(RiakClientSocketPid, Tile, {Tx, Ty, Tz}) ->
     QuadtreeKey = global_grid:quadtree(Tx, Ty, Tz),
     {ok, TileBinary} = gdal_nif:tile_to_binary(Tile, QuadtreeKey),
-    lager:debug("img key: ~p, binary size: ~p~n", [QuadtreeKey, size(TileBinary)]),
+    lager:debug("img quadtreekey: ~p, binary size: ~p~n", [QuadtreeKey, size(TileBinary)]),
 
     ContentType = "image/png",
     TileRiakObject = riakc_obj:new(<<"gis">>, QuadtreeKey, TileBinary, ContentType),

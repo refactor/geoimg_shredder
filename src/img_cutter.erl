@@ -1,4 +1,4 @@
--module(img_scanner).
+-module(img_cutter).
 -behaviour(gen_fsm).
 
 -export([init/1,
@@ -16,11 +16,9 @@
         ]).
 
 -record(state, {refs = [],
-                riakclient     :: pid(),
-                counter = 0,
-                img_tiler,
-                map_profile,    % tile map profile, 
-                                % such as global-geodetic or global-mercator module
+                riakclient      :: pid(),
+                counter = 0     :: non_neg_integer(),
+                img_tiler,      %% instanced parameterized module
                 tile_size = 256 :: integer()}).
 
 start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
@@ -45,9 +43,9 @@ copyouting(done, State) ->
 %    {next_state, copyouting, State}.
     listening(done, State).
 
-listening(done, #state{refs=[], counter=Counter}) ->
+listening(done, #state{refs=[], counter=Counter, riakclient=RiakClient}) ->
     lager:info("the tile copyout-build-work had done, built tiles sum: ~p", [Counter]),
-    {stop, normal, done};
+    {stop, normal, {done, RiakClient}};
 listening(done, State) ->
     {next_state, listening, State}.
 
@@ -76,7 +74,8 @@ handle_info({start, ImgFileName, ProfileMod}, StateName, StateData) ->
     gen_fsm:send_event(self(), ImgTiler:scan_img()),
     {next_state, StateName, StateData#state{img_tiler=ImgTiler}}.
 
-terminate(_Reason, _StateName, _StateData) ->
+terminate(_Reason, _StateName, {done, RiakClient}) ->
+    riakc_pb_socket:stop(RiakClient),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
