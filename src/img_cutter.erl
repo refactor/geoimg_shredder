@@ -15,11 +15,13 @@
          complete/3
         ]).
 
--record(state, {refs = [],
+-record(state, {start_time      :: erlang:timestamp(),
+                img_filename    :: string(),
+                refs = []       :: [reference()],
                 riakclient      :: pid(),
                 counter = 0     :: non_neg_integer(),
                 img_tiler,      %% instanced parameterized module
-                tile_size = 256 :: integer()}).
+                tile_size = 256 :: non_neg_integer()}).
 
 start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
     gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName, RiakClientConfig}, []).
@@ -28,10 +30,13 @@ complete(Pid, Ref, Result) ->
     gen_fsm:send_all_state_event(Pid, {complete, Ref, Result}).
 
 init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
+    StartTime = os:timestamp(),
     {ok, RiakClientSocketPid} = riakc_pb_socket:start_link(RiakIp, RiakPort),
 
     self() ! {start, ImgFileName, ProfileMod},
-    {ok, copyouting, #state{riakclient  = RiakClientSocketPid}}.
+    {ok, copyouting, #state{riakclient  = RiakClientSocketPid,
+                            img_filename = ImgFileName,
+                            start_time = StartTime}}.
 
 copyouting({continue, {TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs, 
                                                                             riakclient=RiakClient,
@@ -45,9 +50,8 @@ copyouting(done, State) ->
 %    {next_state, copyouting, State}.
     listening(done, State).
 
-listening(done, #state{refs=[], counter=Counter, riakclient=RiakClient}) ->
-    lager:info("the tile copyout-build-work had done, built tiles sum: ~p", [Counter]),
-    {stop, normal, {done, RiakClient}};
+listening(done, #state{refs=[]} = State) -> 
+    {stop, normal, State};
 listening(done, State) ->
     {next_state, listening, State}.
 
@@ -77,8 +81,13 @@ handle_info({start, ImgFileName, ProfileMod}, StateName, StateData) ->
     gen_fsm:send_event(self(), ImgTiler:scan_img()),
     {next_state, StateName, StateData#state{img_tiler=ImgTiler}}.
 
-terminate(_Reason, _StateName, {done, RiakClient}) ->
+terminate(_Reason, _StateName, #state{ counter = Counter, 
+                                       riakclient = RiakClient, 
+                                       img_filename = ImgFileName,
+                                       start_time = StartTime}) ->
     riakc_pb_socket:stop(RiakClient),
+    lager:info("img('~s') copyout-build-export to tiles had done, tiles sum: ~p, take time: ~p(seconds)", 
+               [ImgFileName, Counter, timer:now_diff(os:timestamp(), StartTime)/1000000.0]),
     ok.
 
 code_change(_OldVsn, State, Data, _Extra) ->
