@@ -12,12 +12,12 @@
 
 %% API
 -export([start_link/3,
-         complete/3
+         complete/2
         ]).
 
 -record(state, {start_time      :: erlang:timestamp(),
                 img_filename    :: string(),
-                refs = []       :: [reference()],
+                tile_refs = [],
                 riakclient      :: pid(),
                 counter = 0     :: non_neg_integer(),
                 img_tiler,      %% instanced parameterized module
@@ -26,8 +26,9 @@
 start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
     gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName, RiakClientConfig}, []).
 
-complete(Pid, Ref, Result) ->
-    gen_fsm:send_all_state_event(Pid, {complete, Ref, Result}).
+-spec complete(pid(), {TileX::integer(), TileY::integer(), TileZoom::integer()}) -> ok.
+complete(Pid, TileRef) ->
+    gen_fsm:send_all_state_event(Pid, {complete, TileRef}).
 
 init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
     StartTime = os:timestamp(),
@@ -38,27 +39,28 @@ init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
                             img_filename = ImgFileName,
                             start_time = StartTime}}.
 
-copyouting({continue, {TileX, TileY, TileZoom}, Continuation}, State=#state{refs=Refs, 
-                                                                            riakclient=RiakClient,
-                                                                            img_tiler=ImgTiler}) ->
+copyouting({continue, TileInfo, Continuation}, State=#state{tile_refs=TileRefs, 
+                                                            riakclient=RiakClient,
+                                                            img_tiler=ImgTiler}) ->
+    {TileX,TileY,TileZoom} = TileInfo, %make_ref(),
     {ok, TileRawdata} = ImgTiler:copyout_rawtile_for(TileX, TileY, TileZoom),
-    Ref = make_ref(),
-    tile_builder:start_link({self(), Ref}, {TileRawdata, {TileX, TileY, TileZoom}}, RiakClient),
+    tile_builder:start_link(self(), {TileRawdata, TileInfo}, RiakClient),
     gen_fsm:send_event(self(), Continuation()),
-    {next_state, copyouting, State#state{refs=[Ref|Refs]}};
+    {next_state, copyouting, State#state{tile_refs=[TileInfo|TileRefs]}};
 copyouting(done, State) ->
 %    {next_state, copyouting, State}.
     listening(done, State).
 
-listening(done, #state{refs=[]} = State) -> 
+listening(done, #state{tile_refs=[]} = State) -> 
     {stop, normal, State};
 listening(done, State) ->
     {next_state, listening, State}.
 
-handle_event({complete, Ref, Result}, StateName, StateData = #state{refs=Refs, 
-                                                                    counter=Counter}) ->
-    lager:debug("complete: ~p, length(Refs): ~p", [Result, length(Refs)]),
-    NewStateData = StateData#state{refs=Refs--[Ref], counter=Counter+1},
+handle_event({complete, TileInfo}, StateName, StateData = #state{tile_refs=TileRefs, 
+                                                                 counter=Counter}) ->
+    lager:debug("complete: ~p, length(TileRefs): ~p", [TileInfo, length(TileRefs)]),
+    NewStateData = StateData#state{tile_refs = TileRefs -- [TileInfo], 
+                                   counter = Counter + 1},
     case StateName of
         copyouting ->
             {next_state, copyouting, NewStateData};
@@ -81,12 +83,12 @@ handle_info({start, ImgFileName, ProfileMod}, StateName, StateData) ->
     gen_fsm:send_event(self(), ImgTiler:scan_img()),
     {next_state, StateName, StateData#state{img_tiler=ImgTiler}}.
 
-terminate(_Reason, _StateName, #state{ counter = Counter, 
-                                       riakclient = RiakClient, 
-                                       img_filename = ImgFileName,
-                                       start_time = StartTime}) ->
+terminate(_Reason, _StateName, #state{counter = Counter, 
+                                      riakclient = RiakClient, 
+                                      img_filename = ImgFileName,
+                                      start_time = StartTime}) ->
     riakc_pb_socket:stop(RiakClient),
-    lager:info("img('~s') copyout-build-export to tiles had done, tiles sum: ~p, take time: ~p(seconds)", 
+    lager:info("img('~s') copyout-build-export to tiles had done, tiles sum: ~p, take time: ~p(sec)", 
                [ImgFileName, Counter, timer:now_diff(os:timestamp(), StartTime)/1000000.0]),
     ok.
 

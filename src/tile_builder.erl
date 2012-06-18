@@ -19,22 +19,21 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
-start_link(CutterInfo, {RawTile, {Tx, Ty, Tz}}, RiakClientSocketPid) ->
-    gen_server:start_link(?MODULE, [CutterInfo, {RawTile, {Tx, Ty, Tz}}, RiakClientSocketPid], []).
+start_link(CutterInfo, {RawTile, TileInfo}, RiakClientSocketPid) ->
+    gen_server:start_link(?MODULE, [CutterInfo, {RawTile, TileInfo}, RiakClientSocketPid], []).
 
--record(state, {cutter_pid, riakclient, ref, rawtile, tileinfo}).
+-record(state, {cutter_pid, riakclient, rawtile, tileinfo}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
 %% ------------------------------------------------------------------
 
-init([{CutterPid, Ref}, {RawTile, {Tx, Ty, Tz}}, RiakClientSocketPid]) ->
+init([CutterPid, {RawTile, TileInfo}, RiakClientSocketPid]) ->
     self() ! start,
-    {ok, #state{cutter_pid=CutterPid,
+    {ok, #state{cutter_pid = CutterPid,
                 riakclient = RiakClientSocketPid,
-                ref = Ref,
-                rawtile = RawTile, 
-                tileinfo={Tx,Ty,Tz}} }.
+                rawtile    = RawTile, 
+                tileinfo   = TileInfo} }.
 
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
@@ -42,15 +41,14 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info(start, State = #state{ref=Ref, 
-                                  rawtile=RawTile, 
-                                  tileinfo={Tx,Ty,Tz}, 
-                                  riakclient=RiakClientSocketPid}) ->
+handle_info(start, State = #state{rawtile    = RawTile, 
+                                  tileinfo   = TileInfo, 
+                                  riakclient = RiakClientSocketPid}) ->
     {ok, Tile} = gdal_nif:build_tile(RawTile),
-    Res = export_tile(RiakClientSocketPid, Tile, {Tx, Ty, Tz}),
-    lager:debug("export result: ~p", [Res]),
+    Res = export_tile(RiakClientSocketPid, Tile, TileInfo),
+    lager:debug("tile(~p) export result: ~p", [TileInfo, Res]),
     ok = Res,
-    img_cutter:complete(State#state.cutter_pid, Ref, {Tx,Ty,Tz}),
+    img_cutter:complete(State#state.cutter_pid, TileInfo),
     {stop, normal, State}.
 
 terminate(_Reason, _State) ->
