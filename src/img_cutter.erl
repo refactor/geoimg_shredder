@@ -20,7 +20,7 @@
                 tile_refs = [],
                 riakclient      :: pid(),
                 counter = 0     :: non_neg_integer(),
-                img_tiler,      %% instanced parameterized module
+                img_tiler       :: module(),      %% instanced parameterized module
                 tile_size = 256 :: non_neg_integer()}).
 
 start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
@@ -77,9 +77,9 @@ handle_sync_event(_Event, _From, StateName, StateData) ->
     {next_state, StateName, StateData}.
 
 handle_info({start, ImgFileName, ProfileMod}, StateName, StateData) ->
-    {ok, Img, RasterInfo} = gdal_nif:create_warped_vrt(ImgFileName, 
-                                                       ProfileMod:epsg_code()),
-    ImgTiler = img_tiler:new(ProfileMod, Img, RasterInfo),
+    {ok, Img, ImgInfo} = gdal_nif:create_warped_vrt(ImgFileName, 
+                                                    ProfileMod:epsg_code()),
+    ImgTiler = img_tiler:new(ProfileMod, Img, ImgInfo),
     gen_fsm:send_event(self(), ImgTiler:scan_img()),
     {next_state, StateName, StateData#state{img_tiler=ImgTiler}}.
 
@@ -88,7 +88,7 @@ terminate(_Reason, _StateName, #state{counter = Counter,
                                       img_filename = ImgFileName,
                                       start_time = StartTime}) ->
     riakc_pb_socket:stop(RiakClient),
-    lager:info("img('~s') copyout-build-export to tiles had done, tiles sum: ~p, take time: ~p(sec)", 
+    lager:info("img('~s') copyout-build-export to tiles had done, sum: ~p, time: ~p(sec)", 
                [ImgFileName, Counter, timer:now_diff(os:timestamp(), StartTime)/1000000.0]),
     ok.
 
