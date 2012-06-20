@@ -19,8 +19,9 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
-start_link(CutterInfo, {RawTile, TileInfo}, RiakClientSocketPid) ->
-    gen_server:start_link(?MODULE, [CutterInfo, {RawTile, TileInfo}, RiakClientSocketPid], []).
+-spec start_link(pid(), {gdal_nif:rawtile(), global_grid:tile_info()}, pid()) -> {ok,pid()} | ignore | {error,any()}.
+start_link(CutterPid, {RawTile, TileInfo}, RiakClientSocketPid) ->
+    gen_server:start_link(?MODULE, [CutterPid, {RawTile, TileInfo}, RiakClientSocketPid], []).
 
 -record(state, {cutter_pid :: pid(), 
                 riakclient :: pid(), 

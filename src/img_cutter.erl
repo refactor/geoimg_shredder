@@ -23,14 +23,22 @@
                 img_tiler       :: module(),      %% instanced parameterized module
                 tile_size = 256 :: non_neg_integer()}).
 
+
+%% API
+
+-spec start_link(module(), string(), tuple()) -> {ok,pid()} | ignore | {error,any()}.
 start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
     gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName, RiakClientConfig}, []).
 
--spec complete(pid(), {TileX::integer(), TileY::integer(), TileZoom::integer()}) -> ok.
+-spec complete(pid(), global_grid:tile_info()) -> ok.
 complete(Pid, TileRef) ->
     gen_fsm:send_all_state_event(Pid, {complete, TileRef}).
 
+
+%% callback
+
 init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
+    lager:debug("img_cutter start: ~p", [self()]),
     StartTime = os:timestamp(),
     {ok, RiakClientSocketPid} = riakc_pb_socket:start_link(RiakIp, RiakPort),
 
