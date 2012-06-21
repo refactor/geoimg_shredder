@@ -40,6 +40,11 @@ complete(Pid, TileRef) ->
 init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
     lager:debug("img_cutter start: ~p", [self()]),
     StartTime = os:timestamp(),
+
+    Limit = 100,
+    PoolName = list_to_atom(ImgFileName),
+    ppool:start_pool(PoolName, Limit, {tile_builder, start_link, []}),
+
     {ok, RiakClientSocketPid} = riakc_pb_socket:start_link(RiakIp, RiakPort),
 
     self() ! {start, ImgFileName, ProfileMod},
@@ -48,11 +53,13 @@ init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
                             start_time = StartTime}}.
 
 copyouting({continue, TileInfo, Continuation}, State=#state{tile_refs=TileRefs, 
+                                                            img_filename=ImgFileName,
                                                             riakclient=RiakClient,
                                                             img_tiler=ImgTiler}) ->
     {TileX,TileY,TileZoom} = TileInfo, %make_ref(),
     {ok, TileRawdata} = ImgTiler:copyout_rawtile_for(TileX, TileY, TileZoom),
-    tile_builder:start_link(self(), {TileRawdata, TileInfo}, RiakClient),
+    PoolName = list_to_atom(ImgFileName),
+    ppool:async_queue(PoolName, [self(), {TileRawdata, TileInfo}, RiakClient]),
     gen_fsm:send_event(self(), Continuation()),
     {next_state, copyouting, State#state{tile_refs=[TileInfo|TileRefs]}};
 copyouting(done, State) ->
@@ -96,7 +103,11 @@ terminate(_Reason, _StateName, #state{counter = Counter,
                                       img_filename = ImgFileName,
                                       start_time = StartTime}) ->
     riakc_pb_socket:stop(RiakClient),
-    lager:info("img('~s') copyout-build-export to tiles had done, sum: ~p, time: ~p(sec)", 
+
+    PoolName = list_to_existing_atom(ImgFileName),
+    ppool:stop_pool(PoolName),
+
+    lager:info("img(\"~s\") copyout-build-export to tiles had done, sum: ~p, time: ~p(sec)", 
                [ImgFileName, Counter, timer:now_diff(os:timestamp(), StartTime)/1000000.0]),
     ok.
 
