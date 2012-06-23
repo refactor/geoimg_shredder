@@ -92,9 +92,7 @@ handle_sync_event(_Event, _From, StateName, StateData) ->
     {next_state, StateName, StateData}.
 
 handle_info({start, ImgFileName, ProfileMod}, StateName, StateData) ->
-    {ok, Img, ImgInfo} = gdal_nif:create_warped_vrt(ImgFileName, 
-                                                    ProfileMod:epsg_code()),
-    ImgTiler = img_tiler:new(ProfileMod, Img, ImgInfo),
+    ImgTiler = img_tiler:new(ProfileMod, ImgFileName),
     gen_fsm:send_event(self(), ImgTiler:scan_img()),
     {next_state, StateName, StateData#state{img_tiler=ImgTiler}}.
 
