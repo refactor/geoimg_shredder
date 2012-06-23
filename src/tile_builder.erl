@@ -19,14 +19,14 @@
 %% API Function Definitions
 %% ------------------------------------------------------------------
 
--spec start_link(pid(), {gdal_nif:rawtile(), global_grid:tile_info()}, pid()) -> {ok,pid()} | ignore | {error,any()}.
+-spec start_link(pid(), {gdal_nif:rawtile(), tile_grid:tile_info()}, pid()) -> {ok,pid()} | ignore | {error,any()}.
 start_link(CutterPid, {RawTile, TileInfo}, RiakClientSocketPid) ->
     gen_server:start_link(?MODULE, [CutterPid, {RawTile, TileInfo}, RiakClientSocketPid], []).
 
 -record(state, {cutter_pid :: pid(), 
                 riakclient :: pid(), 
                 rawtile    :: gdal_nif:rawtile(), 
-                tileinfo   :: global_grid:tile_info()}).
+                tileinfo   :: tile_grid:tile_info()}).
 
 %% ------------------------------------------------------------------
 %% gen_server Function Definitions
@@ -64,9 +64,9 @@ code_change(_OldVsn, State, _Extra) ->
 %% ------------------------------------------------------------------
 %% Internal Function Definitions
 %% ------------------------------------------------------------------
--spec export_tile(pid(), gdal_nif:tile(), global_grid:tile_info()) -> ok.
+-spec export_tile(pid(), gdal_nif:tile(), tile_grid:tile_info()) -> ok.
 export_tile(RiakClientSocketPid, Tile, {Tx, Ty, TileZoom}) ->
-    QuadtreeKey = global_grid:quadtree({Tx, Ty, TileZoom}),
+    QuadtreeKey = tile_grid:quadtree({Tx, Ty, TileZoom}),
     {ok, TileBinary} = gdal_nif:tile_to_binary(Tile, QuadtreeKey, "png"),
     lager:debug("img quadtreekey: ~p, binary size: ~p~n", 
                 [QuadtreeKey, size(TileBinary)]),
