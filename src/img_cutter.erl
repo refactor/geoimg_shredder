@@ -27,8 +27,8 @@
 %% API
 
 -spec start_link(module(), string(), tuple()) -> {ok,pid()} | ignore | {error,any()}.
-start_link(TileMapProfileMod, ImgFileName, RiakClientConfig) ->
-    gen_fsm:start_link(?MODULE, {TileMapProfileMod, ImgFileName, RiakClientConfig}, []).
+start_link(RiakClientConfig, TileMapProfileMod, ImgFileName) ->
+    gen_fsm:start_link(?MODULE, {RiakClientConfig, TileMapProfileMod, ImgFileName}, []).
 
 -spec complete(pid(), global_grid:tile_info()) -> ok.
 complete(Pid, TileRef) ->
@@ -37,7 +37,7 @@ complete(Pid, TileRef) ->
 
 %% callback
 
-init({ProfileMod, ImgFileName, {RiakIp, RiakPort}}) ->
+init({{RiakIp, RiakPort}, ProfileMod, ImgFileName}) ->
     lager:debug("img_cutter start: ~p", [self()]),
     StartTime = os:timestamp(),
 
@@ -58,7 +58,7 @@ copyouting({continue, TileInfo, Continuation}, State=#state{tile_refs=TileRefs,
                                                             img_tiler=ImgTiler}) ->
     {TileX,TileY,TileZoom} = TileInfo, %make_ref(),
     {ok, TileRawdata} = ImgTiler:copyout_rawtile_for(TileX, TileY, TileZoom),
-    PoolName = list_to_atom(ImgFileName),
+    PoolName = list_to_existing_atom(ImgFileName),
     ppool:async_queue(PoolName, [self(), {TileRawdata, TileInfo}, RiakClient]),
     gen_fsm:send_event(self(), Continuation()),
     {next_state, copyouting, State#state{tile_refs=[TileInfo|TileRefs]}};
