@@ -11,5 +11,8 @@
                   ppool
                  ]},
   {mod, { geoimg_shredder_app, []}},
-  {env, []}
+  {env, [{imgdir, "."}, 
+         {riak_client, {"127.0.0.1", 8087}},
+         {map_profile, global_geodetic}
+      ]}
  ]}.
